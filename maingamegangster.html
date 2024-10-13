@@ -1,0 +1,342 @@
+<html><head><base href="https://example.com/gangster-chase-extreme/">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gangster Chase Extreme: Triple Threat Edition</title>
+<style>
+  body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+    background: linear-gradient(to bottom, #1a1a2e, #16213e);
+  }
+  #gameCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+  #gun {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    width: 80px;
+    height: 80px;
+    transform: translate(-50%, 0);
+    cursor: crosshair;
+    transition: transform 0.1s;
+  }
+  #gun:active {
+    transform: translate(-50%, 0) scale(0.95);
+  }
+  #hud {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    font-size: 24px;
+    color: #fff;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+  }
+  #health {
+    width: 200px;
+    height: 20px;
+    background-color: #333;
+    margin-top: 10px;
+  }
+  #healthBar {
+    width: 100%;
+    height: 100%;
+    background-color: #00ff00;
+    transition: width 0.3s;
+  }
+  #gameOver {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 48px;
+    color: #ff0000;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    display: none;
+  }
+  #restartButton {
+    position: fixed;
+    top: 60%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 24px;
+    padding: 10px 20px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    cursor: pointer;
+    display: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<div id="hud">
+  <div>Score: <span id="scoreValue">0</span></div>
+  <div>Gangsters Escaped: <span id="escapedValue">0</span>/30</div>
+  <div>Health:</div>
+  <div id="health"><div id="healthBar"></div></div>
+</div>
+<div id="gameOver">GAME OVER</div>
+<button id="restartButton">Restart Game</button>
+<svg id="gun" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <rect x="30" y="20" width="60" height="20" fill="#555" />
+  <rect x="20" y="40" width="70" height="40" fill="#777" />
+  <rect x="10" y="50" width="20" height="20" fill="#999" />
+</svg>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.9.1/gsap.min.js"></script>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const gun = document.getElementById('gun');
+const scoreValue = document.getElementById('scoreValue');
+const escapedValue = document.getElementById('escapedValue');
+const healthBar = document.getElementById('healthBar');
+const gameOverEl = document.getElementById('gameOver');
+const restartButton = document.getElementById('restartButton');
+
+let score = 0;
+let escapedGangsters = 0;
+let gangsters = [];
+let bullets = [];
+let gunRotation = 0;
+let isGameOver = false;
+let autoRunSpeed = 2;
+let health = 100;
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+class Gangster {
+  constructor(type = 'normal') {
+    this.width = 50;
+    this.height = 80;
+    this.x = canvas.width / 2;
+    this.y = canvas.height - 100;
+    this.speed = 1 + Math.random() * 2;
+    this.angle = Math.random() * Math.PI * 2;
+    this.type = type;
+    this.hue = 0;
+  }
+
+  draw() {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle + Math.PI / 2);
+
+    switch(this.type) {
+      case 'rainbow':
+        ctx.fillStyle = `hsl(${this.hue}, 100%, 50%)`;
+        this.hue = (this.hue + 5) % 360;
+        break;
+      case 'killer':
+        ctx.fillStyle = '#FF0000';
+        break;
+      default:
+        ctx.fillStyle = '#000000';
+    }
+    ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+    
+    ctx.fillStyle = this.type === 'normal' ? '#FFA500' : '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(0, -this.height / 4, 15, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.arc(-5, -this.height / 4 - 2, 3, 0, Math.PI * 2);
+    ctx.arc(5, -this.height / 4 - 2, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  update() {
+    this.x += Math.cos(this.angle) * this.speed;
+    this.y += Math.sin(this.angle) * this.speed;
+
+    if (this.type === 'killer') {
+      const dx = canvas.width / 2 - this.x;
+      const dy = canvas.height - 20 - this.y;
+      this.angle = Math.atan2(dy, dx);
+      
+      if (Math.abs(dx) < 30 && Math.abs(dy) < 30) {
+        health -= 1;
+        healthBar.style.width = `${health}%`;
+        if (health <= 0) gameOver();
+      }
+    }
+
+    if (
+      this.x < -this.width ||
+      this.x > canvas.width + this.width ||
+      this.y < -this.height ||
+      this.y > canvas.height + this.height
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+}
+
+class Bullet {
+  constructor(angle) {
+    this.x = canvas.width / 2;
+    this.y = canvas.height - 20;
+    this.radius = 5;
+    this.speed = 10;
+    this.angle = angle;
+  }
+
+  draw() {
+    ctx.fillStyle = '#FFFF00';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  update() {
+    this.x += Math.cos(this.angle) * this.speed;
+    this.y += Math.sin(this.angle) * this.speed;
+    this.y += autoRunSpeed; // Move bullets with the autorun
+  }
+}
+
+function spawnGangster() {
+  if (!isGameOver) {
+    const random = Math.random();
+    let type = 'normal';
+    if (random < 0.2) type = 'rainbow';
+    else if (random < 0.25) type = 'killer';
+    gangsters.push(new Gangster(type));
+  }
+}
+
+function animate() {
+  if (isGameOver) return;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Move everything up to simulate autorun
+  ctx.save();
+  ctx.translate(0, -autoRunSpeed);
+
+  gangsters.forEach((gangster, index) => {
+    const hasEscaped = gangster.update();
+    gangster.draw();
+
+    if (hasEscaped) {
+      gangsters.splice(index, 1);
+      escapedGangsters++;
+      escapedValue.textContent = escapedGangsters;
+
+      if (escapedGangsters >= 30) {
+        gameOver();
+      }
+    }
+  });
+
+  bullets.forEach((bullet, bulletIndex) => {
+    bullet.update();
+    bullet.draw();
+
+    if (
+      bullet.x < 0 ||
+      bullet.x > canvas.width ||
+      bullet.y < 0 ||
+      bullet.y > canvas.height
+    ) {
+      bullets.splice(bulletIndex, 1);
+    }
+
+    gangsters.forEach((gangster, gangsterIndex) => {
+      const dx = bullet.x - gangster.x;
+      const dy = bullet.y - gangster.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance < gangster.width / 2 + bullet.radius) {
+        bullets.splice(bulletIndex, 1);
+        gangsters.splice(gangsterIndex, 1);
+        switch(gangster.type) {
+          case 'rainbow':
+            score += 2;
+            break;
+          case 'killer':
+            score += 3;
+            break;
+          default:
+            score += 1;
+        }
+        scoreValue.textContent = score;
+      }
+    });
+  });
+
+  ctx.restore();
+
+  requestAnimationFrame(animate);
+}
+
+canvas.addEventListener('mousemove', (e) => {
+  const dx = e.clientX - canvas.width / 2;
+  const dy = e.clientY - (canvas.height - 20);
+  gunRotation = Math.atan2(dy, dx);
+  gun.style.transform = `translate(-50%, 0) rotate(${gunRotation}rad)`;
+});
+
+canvas.addEventListener('click', () => {
+  if (!isGameOver) {
+    const bullet = new Bullet(gunRotation);
+    bullets.push(bullet);
+
+    gsap.to(gun, {
+      scale: 0.95,
+      duration: 0.1,
+      yoyo: true,
+      repeat: 1
+    });
+  }
+});
+
+function gameOver() {
+  isGameOver = true;
+  gameOverEl.style.display = 'block';
+  restartButton.style.display = 'block';
+}
+
+function restartGame() {
+  isGameOver = false;
+  score = 0;
+  escapedGangsters = 0;
+  gangsters = [];
+  bullets = [];
+  health = 100;
+  scoreValue.textContent = score;
+  escapedValue.textContent = escapedGangsters;
+  healthBar.style.width = '100%';
+  gameOverEl.style.display = 'none';
+  restartButton.style.display = 'none';
+  animate();
+}
+
+restartButton.addEventListener('click', restartGame);
+
+setInterval(spawnGangster, 2000);
+animate();
+
+window.addEventListener('resize', () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+});
+</script>
+</body></html>
